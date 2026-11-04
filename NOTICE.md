@@ -29,10 +29,6 @@ The project maintains the following source code repositories:
 
 * [https://github.com/eclipse-hephaestus/](https://github.com/eclipse-hephaestus)
 
-## Third-Party Dependencies
-
-See [DEPENDENCIES](DEPENDENCIES)
-
 ## Cryptography
 
 Content may contain encryption software. The country in which you are currently
