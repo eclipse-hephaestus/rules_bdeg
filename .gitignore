@@ -1,0 +1,22 @@
+.venv
+
+# Bazel convenience symlinks and local-only config
+bazel-*
+user.bazelrc
+
+# Local dev container setup (machine/network specific)
+.devcontainer
+
+# BDEG output: symlinks created by build.sh / run_tests.sh into bazel-bin
+cmake-packages
+cmake-packages-wa
+
+# CMake build trees
+build/
+cmake_build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+
+tmp
