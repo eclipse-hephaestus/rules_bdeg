@@ -1,0 +1,3 @@
+# Ignore directories that are separate Bazel workspaces
+examples
+e2e

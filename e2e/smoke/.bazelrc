@@ -1,0 +1,10 @@
+# Bazel configuration for the rules_bdeg smoke-test workspace.
+#
+# e2e/smoke is a standalone Bazel workspace (see //.bazelignore), so it does
+# not inherit the repo-root .bazelrc automatically. Import it to pick up the
+# module registries and the cc_static_library flag cmake_export requires.
+import %workspace%/../../.bazelrc
+
+# Local, untracked overrides for this workspace (CA bundles, proxies, caches).
+# See ../../user.bazelrc.example.
+try-import %workspace%/user.bazelrc
