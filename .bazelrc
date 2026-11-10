@@ -1,0 +1,32 @@
+# Project-level Bazel configuration for rules_bdeg.
+#
+# This file contains ONLY settings required to build this project anywhere.
+# Machine-, network- or company-specific settings (CA bundles, HTTP proxies,
+# local caches) belong in an untracked user.bazelrc - see user.bazelrc.example
+# and the try-import at the bottom of this file.
+
+# --- Module registries ------------------------------------------------------
+# score_tooling (used by //:format and //:copyright) is published in the
+# Eclipse S-CORE registry, not in the Bazel Central Registry, so both are
+# needed. Order matters: S-CORE first, BCR as fallback.
+common --registry=https://raw.githubusercontent.com/eclipse-score/bazel_registry/main/
+common --registry=https://bcr.bazel.build
+
+# --- Required feature flags -------------------------------------------------
+# cmake_export synthesizes cc_static_library targets to merge each exported
+# package's full transitive closure into one linkable archive. On Bazel 8.x
+# cc_static_library is still gated behind this flag, so it is a functional
+# requirement of this ruleset rather than an optimization.
+common --experimental_cc_static_library
+
+common --experimental_isolated_extension_usages
+
+# --- Hermeticity ------------------------------------------------------------
+# Keep the action environment independent of the invoking shell so builds are
+# reproducible across contributor machines and CI.
+build --incompatible_strict_action_env
+
+# --- Local overrides --------------------------------------------------------
+# Optional and untracked. Use it for corporate CA bundles, proxies, or local
+# cache paths. Copy user.bazelrc.example to user.bazelrc to get started.
+try-import %workspace%/user.bazelrc
