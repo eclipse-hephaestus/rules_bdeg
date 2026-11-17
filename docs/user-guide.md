@@ -19,6 +19,7 @@ This guide covers everything you need to use `rules_bdeg` to export Bazel C++ de
 
 - Bazel 8.0.0+
 - CMake 3.16+
+- `--experimental_cc_static_library` enabled in your workspace ([details](#required-bazel-flag))
 
 ### Tested Versions
 
@@ -40,7 +41,7 @@ bazel_dep(name = "rules_bdeg", version = "0.1.0")
 # Until published to BCR, use git_override:
 git_override(
     module_name = "rules_bdeg",
-    remote = "https://github.com/siemens/rules_bdeg.git",  # Update with actual repo
+    remote = "https://github.com/eclipse-hephaestus/rules_bdeg.git",
     tag = "v0.1.0",
 )
 ```
@@ -61,7 +62,7 @@ bazel_dep(name = "rules_bdeg", version = "0.1.0")
 
 archive_override(
     module_name = "rules_bdeg",
-    urls = ["https://github.com/siemens/rules_bdeg/archive/refs/tags/v0.1.0.tar.gz"],
+    urls = ["https://github.com/eclipse-hephaestus/rules_bdeg/archive/refs/tags/v0.1.0.tar.gz"],
     strip_prefix = "rules_bdeg-0.1.0",
     integrity = "sha256-...",  # Recommended
 )
@@ -86,6 +87,38 @@ local_path_override(
 | `local_path_override` | Local dev | Instant changes | Not shareable |
 
 </details>
+
+### Required Bazel flag
+
+Add this to the `.bazelrc` of the workspace that calls `cmake_export`:
+
+```
+common --experimental_cc_static_library
+```
+
+`cmake_export` merges each exported package's full dependency tree into one
+self-contained static archive, using Bazel's built-in `cc_static_library` rule.
+That rule is still experimental on Bazel 8.x, so it has to be switched on
+explicitly.
+
+The flag belongs in **your** workspace, not just in `rules_bdeg`. `cmake_export`
+is a macro, which means it generates the `cc_static_library` targets inside the
+project that calls it. Without the flag the build stops during analysis:
+
+```
+ERROR: .../BUILD.bazel:19:13: in cc_static_library rule //gtest_boost:export_GTestMain_merged:
+Error in fail: cc_static_library is an experimental rule and must be enabled
+with --experimental_cc_static_library
+```
+
+Note that the target named in the error (`export_GTestMain_merged`) is one
+`cmake_export` generated for you, which is why the message can look unfamiliar.
+
+If you prefer not to set it globally, pass it per invocation instead:
+
+```bash
+bazel build //:export --experimental_cc_static_library
+```
 
 ---
 
@@ -118,11 +151,15 @@ cmake_export(
     name = "export",
     deps = {
         "@googletest//:gtest": "GTest",
-        "@googletest//:gtest_main": "GTest",
+        "@googletest//:gtest_main": "GTestMain",
         "@boost.program_options": "Boost",
     },
 )
 ```
+
+> Each CMake package name must map to exactly one Bazel target, which is why
+> `gtest` and `gtest_main` get separate names here. See
+> [One target per CMake package](#one-target-per-cmake-package).
 
 ### 3. Build and Use
 
@@ -186,6 +223,37 @@ Alongside these, the merged archives each package links against are produced in
 > and the generated `Targets.cmake` resolves paths against whichever exists.
 > This makes the packages work under both the legacy and the modern (bzlmod
 > sibling) Bazel repository layouts without any manual symlinking.
+
+#### `bdeg-deps.cmake` also prefers Config packages
+
+Including the umbrella sets `CMAKE_FIND_PACKAGE_PREFER_CONFIG` to `TRUE`:
+
+```cmake
+if(NOT DEFINED CMAKE_FIND_PACKAGE_PREFER_CONFIG)
+  set(CMAKE_FIND_PACKAGE_PREFER_CONFIG TRUE)
+endif()
+```
+
+By default `find_package(Foo)` tries **Module mode** first whenever a
+`FindFoo.cmake` exists, and CMake bundles such modules for many common
+libraries (`ZLIB`, `OpenSSL`, `CURL`, `Threads`, ...). Adding BDEG's directory
+to `CMAKE_PREFIX_PATH` only influences **Config mode**, so without this a
+system-installed copy would silently win over the Bazel-built library you asked
+BDEG to export. You would then compile against one library's headers and link
+another's archive - an ABI mismatch that links cleanly and fails at runtime.
+
+Two consequences worth knowing:
+
+- **It is project-wide, not BDEG-only.** Every `find_package()` call after the
+  include prefers Config mode, including ones unrelated to BDEG. If some other
+  dependency relied on a bundled Find module, it may now resolve differently.
+- **Your setting wins.** The guard means an explicit value in your toolchain
+  file or on the command line is respected, so
+  `-DCMAKE_FIND_PACKAGE_PREFER_CONFIG=FALSE` restores the default behaviour.
+
+A few bundled modules (`FindGTest` among them) already defer to a config package
+via `find_package(... NO_MODULE)`, which is why GTest works either way. Most do
+not.
 
 ---
 
@@ -294,7 +362,7 @@ The `deps` attribute maps Bazel targets to CMake namespaces. The resulting CMake
 deps = {
     # Bazel label                    CMake namespace    →  CMake target
     "@googletest//:gtest":           "GTest",           #  GTest::gtest
-    "@googletest//:gtest_main":      "GTest",           #  GTest::gtest_main
+    "@googletest//:gtest_main":      "GTestMain",       #  GTestMain::gtest_main
     "@abseil-cpp//absl/strings":     "AbslStrings",     #  AbslStrings::strings
     "@boost.program_options":        "Boost",           #  Boost::program_options
 }
@@ -310,23 +378,45 @@ deps = {
 
 The **Bazel target name** (after the colon) becomes the CMake target suffix. The **CMake namespace** (the dict value) becomes the prefix.
 
-### Grouping Related Targets
+### One target per CMake package
 
-Use the same namespace for related targets:
+Every CMake package name must map to **exactly one** Bazel target. Each exported
+package generates `<Pkg>Config.cmake`, `<Pkg>ConfigVersion.cmake` and
+`<Pkg>Targets.cmake`, and those file names derive only from the package name -
+so reusing a name would generate the same files twice.
+
+Reusing a name fails at load time, naming both targets:
+
+```
+Error in fail: cmake_export(name = "export"): CMake package "GTest" is mapped
+from 2 Bazel targets: @googletest//:gtest, @googletest//:gtest_main.
+A cmake_export package currently supports exactly one Bazel target.
+Give each target its own package name, for example "GTest" and "GTestMain".
+```
+
+Give each target its own package name:
 
 ```python
 deps = {
-    "@googletest//:gtest": "GTest",       # GTest::gtest
-    "@googletest//:gtest_main": "GTest",  # GTest::gtest_main
-    "@googletest//:gmock": "GTest",       # GTest::gmock
+    "@googletest//:gtest": "GTest",           # GTest::gtest
+    "@googletest//:gtest_main": "GTestMain",  # GTestMain::gtest_main
+    "@googletest//:gmock": "GMock",           # GMock::gmock
 }
 ```
 
-Then in CMake:
+Then in CMake, find each package separately:
+
 ```cmake
 find_package(GTest REQUIRED)
-target_link_libraries(my_test PRIVATE GTest::gtest_main GTest::gmock)
+find_package(GTestMain REQUIRED)
+find_package(GMock REQUIRED)
+target_link_libraries(my_test PRIVATE GTestMain::gtest_main GMock::gmock)
 ```
+
+> **Note:** upstream CMake packages conventionally group related targets under a
+> single name (`GTest::gtest` and `GTest::gtest_main` both from one `GTest`
+> package). Supporting that is a planned improvement; until then each target
+> needs its own package name.
 
 ---
 

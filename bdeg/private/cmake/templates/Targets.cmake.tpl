@@ -177,7 +177,12 @@ if(_@PACKAGE_NAME@_IMPORTED_LOCATION AND EXISTS "${_@PACKAGE_NAME@_IMPORTED_LOCA
     # Prepend the whole-archived self so its symbols resolve, then keep the
     # cross-package / system link deps after it.
     set(_@PACKAGE_NAME@_LINK_LIBS "${_@PACKAGE_NAME@_SELF_LINK};${_@PACKAGE_NAME@_LINK_LIBS}")
-    set_property(TARGET @PACKAGE_NAME@::@TARGET_NAME@ PROPERTY
+    # APPEND, never replace: the property may already hold this target's own
+    # link flags from its Bazel linkopts (GTest, for instance, carries
+    # -pthread, set further up from @TARGET_PROPERTIES_EXTRA@). Overwriting it
+    # would silently drop those, leaving consumers with undefined pthread
+    # symbols or a binary that fails at runtime.
+    set_property(TARGET @PACKAGE_NAME@::@TARGET_NAME@ APPEND PROPERTY
       INTERFACE_LINK_OPTIONS "-Wl,--allow-multiple-definition"
     )
     unset(_@PACKAGE_NAME@_SELF_LINK)

@@ -26,6 +26,9 @@ and that those packages actually drive a real CMake `find_package` + link + run.
 | Facade / transitive closure | `calc` has no sources; linking it must resolve `add`/`mul` object code |
 | Cross-package references | `Calc` link line references `AddLib::add` |
 | Compile-define propagation | `BDEG_CALC_VERSION=42` reaches the consumer (`static_assert`) and object code |
+| `local_defines` stay private | `add` sets `BDEG_PRIVATE_SHOULD_NOT_LEAK=1`; asserts it is **absent** from the generated package, since Bazel never propagates `local_defines` to dependents |
+| CMake escaping of defines | `add` sets the hostile define `BDEG_TRICKY=\"a;b\"`; asserts the quote and inner semicolon are escaped so the property stays a valid two-item list |
+| `testonly` forwarding | `export_testonly` exports a `testonly` library; building it fails analysis unless `cmake_export` forwards `testonly` to the merged archive |
 | Include propagation | Consumer includes `calc/calc.h` via `INTERFACE_INCLUDE_DIRECTORIES` |
 | Version parsing | Non-default `version = "2.3.4"` in `ConfigVersion.cmake` |
 | Repo-layout independence | Both `BDEG_EXECROOT` and `BDEG_OUTPUT_BASE` emitted; resolver present |

@@ -42,8 +42,12 @@ cc_library(
     name = "add",
     srcs = ["src/calc/add.cpp"],
     hdrs = ["src/calc/include/calc/add.h"],
-    defines = ["BDEG_CALC_VERSION=42"],
+    defines = [
+        "BDEG_CALC_VERSION=42",
+        "BDEG_TRICKY=\\\"a;b\\\"",
+    ],
     includes = ["src/calc/include"],
+    local_defines = ["BDEG_PRIVATE_SHOULD_NOT_LEAK=1"],
 )
 
 # Depends on :add - its implementation calls bdeg::add().
@@ -64,9 +68,30 @@ cc_library(
     deps = [":mul"],
 )
 
+# Test-support library, marked testonly. Bazel forbids non-testonly targets
+# from depending on it, so cmake_export's generated cc_static_library must
+# inherit testonly too.
+cc_library(
+    name = "test_helper",
+    srcs = ["src/calc/add.cpp"],
+    hdrs = ["src/calc/include/calc/add.h"],
+    includes = ["src/calc/include"],
+    testonly = True,
+)
+
 # ---------------------------------------------------------------------------
 # Export targets
 # ---------------------------------------------------------------------------
+
+# Exports a testonly library. Guards that `testonly` is forwarded to the
+# synthesized merged archive; without that, analysis fails with a complaint
+# about a target the user never wrote (export_TestHelper_merged).
+cmake_export(
+    name = "export_testonly",
+    testonly = True,
+    output_dir = "cmake-packages-testonly",
+    deps = {":test_helper": "TestHelper"},
+)
 
 # Primary export consumed end-to-end by consumer/CMakeLists.txt.
 # Covers: facade/transitive closure, cross-package refs, defines, includes,

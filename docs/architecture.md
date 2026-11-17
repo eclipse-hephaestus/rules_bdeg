@@ -84,29 +84,42 @@ bdeg/private/
 
 Every C++ target provides a `CcInfo` provider:
 
+Simplified below; the real implementations live in `bdeg/private/common.bzl`.
+
 ```python
-def _collect_compilation_flags(cc_info):
+# Real name: collect_compilation_info()
+def collect_compilation_info(cc_info):
     context = cc_info.compilation_context
-    
+
     include_dirs = []
     include_dirs.extend(context.includes.to_list())
+    include_dirs.extend(context.quote_includes.to_list())
     include_dirs.extend(context.system_includes.to_list())
-    
+
+    # Only the public `defines`. `local_defines` is deliberately NOT exported:
+    # Bazel never propagates it to dependents, so publishing it would compile
+    # consumers with the library's private configuration.
     defines = context.defines.to_list()
-    
-    return include_dirs, defines
+
+    return struct(include_dirs = include_dirs, defines = defines)
 ```
 
 ```python
-def _collect_link_flags(cc_info):
+# Real name: collect_linking_info()
+def collect_linking_info(cc_info, prefer_pic = True):
     context = cc_info.linking_context
-    
+    library_paths = []
+
     for linker_input in context.linker_inputs.to_list():
         for library in linker_input.libraries:
-            lib_path = library.static_library.path
-            library_paths.append(lib_path)
-    
-    return library_paths
+            # select_library_file() picks ONE variant per LibraryToLink,
+            # preferring the PIC static archive since that is what Bazel's
+            # default build modes produce.
+            candidate = select_library_file(library, prefer_pic)
+            if candidate:
+                library_paths.append(candidate.path)
+
+    return struct(library_paths = library_paths)
 ```
 
 ### 2. Resolve Transitive Dependencies
@@ -114,13 +127,23 @@ def _collect_link_flags(cc_info):
 When `gtest_main` depends on `gtest`, we want CMake's `INTERFACE_LINK_LIBRARIES` to reference `GTest::gtest` rather than a raw library path:
 
 ```python
-def _build_label_to_cmake_map(deps_dict):
-    """Maps Bazel labels to CMake target names"""
+# Real name: build_label_to_export_map(). The format function is passed in so
+# the same logic can serve other output formats (Cargo, Gradle, ...).
+def build_label_to_export_map(deps_dict, format_target_name_fn):
+    """Maps Bazel labels to export target names."""
     label_map = {}
-    for target, cmake_name in deps_dict.items():
+    for target, export_name in deps_dict.items():
         label_str = str(target.label)  # "@googletest//:gtest"
-        target_name = target.label.name  # "gtest"
-        label_map[label_str] = f"{cmake_name}::{target_name}"
+        target_name = sanitize_identifier(target.label.name)  # "gtest"
+        label_map[label_str] = format_target_name_fn(export_name, target_name)
+
+        # Fallback keyed by repository name alone, for labels that are not
+        # themselves exported. First one registered wins - see
+        # "Known issue: repository-level dependency mapping" below.
+        repo_name = target.label.workspace_name
+        if repo_name and "@" + repo_name not in label_map:
+            label_map["@" + repo_name] = label_map[label_str]
+
     return label_map
 ```
 
@@ -242,6 +265,30 @@ def _cargo_export_impl(ctx):
 - **Single platform** - One export per `--platforms` configuration
 - **C++ only** - Only `CcInfo` providers supported
 - **Hardcoded version** - Version from rule attribute, not from MODULE.bazel
+- **One target per CMake package** - A package name maps to exactly one Bazel
+  target, because the generated `<Pkg>Config.cmake` / `<Pkg>Targets.cmake` file
+  names derive from the package name alone. Reusing a name fails at load time
+  with a diagnostic naming both targets. Upstream CMake packages conventionally
+  group related targets under one name (`GTest::gtest` and `GTest::gtest_main`
+  from a single `GTest` package); supporting that needs `Targets.cmake.tpl` to
+  emit several imported targets, and the merged archive to cover every label of
+  the package rather than only the first.
+
+### Known issue: repository-level dependency mapping
+
+`build_label_to_export_map()` registers a fallback entry keyed by repository
+name alone, in addition to the exact label. When two exported targets come from
+the same repository, that fallback resolves to whichever was registered first,
+so a transitive library can be attributed to the wrong `Pkg::target` name.
+
+In practice the effect is limited: the fallback is only consulted when exact
+label matching misses, and those libraries are already inside the package's
+merged archive, so the usual outcome is a redundant or oddly-named link-line
+entry rather than a missing symbol. Removing the fallback outright is not safe
+either - it would turn unmatched Bazel-built archives into dropped entries. The
+fix is to register the repository-level key only when exactly one exported
+target comes from that repository, and is best done alongside the
+multiple-targets-per-package work above.
 
 ---
 

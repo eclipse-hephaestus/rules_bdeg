@@ -75,4 +75,25 @@ message(STATUS "BDEG: Using output base: ${BDEG_OUTPUT_BASE}")
 
 list(PREPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_LIST_DIR}")
 
+# Make find_package() prefer Config packages (what BDEG generates) over CMake's
+# bundled Find<Pkg>.cmake modules.
+#
+# By default find_package(Foo) tries Module mode FIRST whenever a FindFoo.cmake
+# exists, and CMake bundles one for many common libraries (ZLIB, OpenSSL, CURL,
+# Threads, ...). Prepending our directory to CMAKE_PREFIX_PATH above only
+# influences Config mode, so without this a system-installed copy would
+# silently win over the Bazel-built library the user asked us to export. The
+# consumer would then compile against one library's headers and link another's
+# archive - an ABI mismatch that links cleanly and fails at runtime.
+#
+# A few bundled modules (FindGTest among them) already defer to a config
+# package via `find_package(... NO_MODULE)`, which is why GTest happens to work
+# without this. Most do not.
+#
+# Only set when the consumer has expressed no preference, so an explicit
+# setting in their toolchain file or command line still wins.
+if(NOT DEFINED CMAKE_FIND_PACKAGE_PREFER_CONFIG)
+  set(CMAKE_FIND_PACKAGE_PREFER_CONFIG TRUE)
+endif()
+
 @INCLUDES@

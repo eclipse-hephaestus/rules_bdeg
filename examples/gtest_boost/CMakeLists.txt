@@ -5,7 +5,7 @@
 #   ln -sf "$(bazel info bazel-bin)/gtest_boost/cmake-packages" cmake-packages
 #   cmake -S . -B build -DBDEG_DIR="$(pwd)/cmake-packages"
 #   cmake --build build
-#   ctest --test-dir build
+#   (cd build && ctest)
 
 cmake_minimum_required(VERSION 3.16)
 

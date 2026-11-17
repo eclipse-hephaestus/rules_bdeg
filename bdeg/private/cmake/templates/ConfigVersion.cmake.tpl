@@ -7,9 +7,22 @@ set(@PACKAGE_NAME@_VERSION_MAJOR @PACKAGE_VERSION_MAJOR@)
 set(@PACKAGE_NAME@_VERSION_MINOR @PACKAGE_VERSION_MINOR@)
 set(@PACKAGE_NAME@_VERSION_PATCH @PACKAGE_VERSION_PATCH@)
 
-# Check version compatibility
+# Check version compatibility, using "same major version" semantics - the same
+# rule as CMake's own write_basic_package_version_file(COMPATIBILITY
+# SameMajorVersion).
+#
+# BOTH conditions must hold:
+#   1. the major versions match, and
+#   2. the exported version is at least the requested one.
+#
+# The second check is easy to forget. With only the major-version test, a
+# consumer asking for 2.9 against an exported 2.3.4 was told "compatible",
+# because both majors are 2. They then built against a package older than they
+# asked for and hit confusing compile or link errors later, instead of a clear
+# version error at configure time.
 if(PACKAGE_FIND_VERSION)
-    if(PACKAGE_FIND_VERSION_MAJOR EQUAL @PACKAGE_VERSION_MAJOR@)
+    if(PACKAGE_FIND_VERSION_MAJOR EQUAL @PACKAGE_VERSION_MAJOR@
+       AND NOT PACKAGE_FIND_VERSION VERSION_GREATER PACKAGE_VERSION)
         set(PACKAGE_VERSION_COMPATIBLE TRUE)
         if(PACKAGE_FIND_VERSION VERSION_EQUAL PACKAGE_VERSION)
             set(PACKAGE_VERSION_EXACT TRUE)

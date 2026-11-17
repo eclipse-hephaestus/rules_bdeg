@@ -62,8 +62,11 @@ The general workflow is:
 
 4. **Run tests:**
    ```bash
-   ctest --test-dir build
+   (cd build && ctest)
    ```
+
+   > Run `ctest` from inside the build directory. The `--test-dir` option is
+   > more convenient but requires CMake 3.20+, while this project supports 3.16+.
 
 ## Structure
 

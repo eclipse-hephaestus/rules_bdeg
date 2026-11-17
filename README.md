@@ -24,7 +24,23 @@ bazel_dep(name = "googletest", version = "1.17.0")
 
 > **Note:** Before BCR publication, see [Installation Options](docs/user-guide.md#installation) for `git_override` setup.
 
-**2. Define exports in BUILD.bazel:**
+**2. Enable the required Bazel flag in your `.bazelrc`:**
+
+```
+common --experimental_cc_static_library
+```
+
+`cmake_export` merges each exported package into one self-contained static
+archive using Bazel's built-in `cc_static_library`, which is still experimental
+on Bazel 8.x. The flag is needed in **your** workspace, because the rule
+generates those archive targets there. Skip it and the build stops with:
+
+```
+Error in fail: cc_static_library is an experimental rule and must be enabled
+with --experimental_cc_static_library
+```
+
+**3. Define exports in BUILD.bazel:**
 
 ```python
 load("@rules_bdeg//bdeg:defs.bzl", "cmake_export")
@@ -32,18 +48,22 @@ load("@rules_bdeg//bdeg:defs.bzl", "cmake_export")
 cmake_export(
     name = "export",
     deps = {
-        # Bazel target           → CMake namespace
-        "@googletest//:gtest":      "GTest",      # becomes GTest::gtest
-        "@googletest//:gtest_main": "GTest",      # becomes GTest::gtest_main
+        # Bazel target        → CMake package name
+        "@googletest//:gtest": "GTest",   # becomes GTest::gtest
     },
 )
 ```
 
-**3. Build and use:**
+> **One target per CMake package.** A package name must map to exactly one Bazel
+> target, because the generated `GTestConfig.cmake` / `GTestTargets.cmake` files
+> are named after the package. To export more targets, give each its own name -
+> see [`examples/gtest_boost`](examples/gtest_boost/BUILD.bazel), which exports
+> `GTest`, `GTestMain` and `Boost`.
+
+**4. Build and use:**
 
 ```bash
-# Build deps first (BDEG reads metadata from built artifacts)
-bazel build @googletest//:gtest @googletest//:gtest_main
+# Generates the CMake packages and builds the merged archives they point at
 bazel build //:export
 
 # Create symlink and build with CMake
@@ -51,7 +71,7 @@ ln -sf "$(bazel info bazel-bin)/cmake-packages" cmake-packages
 cmake -S . -B build -DBDEG_DIR="$(pwd)/cmake-packages" && cmake --build build
 ```
 
-**4. In CMakeLists.txt:**
+**5. In CMakeLists.txt:**
 
 ```cmake
 include("${BDEG_DIR}/bdeg-deps.cmake")
@@ -70,7 +90,6 @@ target_link_libraries(my_app PRIVATE GTest::gtest)
 |----------|-------------|
 | [User Guide](docs/user-guide.md) | Complete usage guide, patterns, troubleshooting |
 | [Architecture](docs/architecture.md) | Technical internals for contributors |
-| [Design Proposal](docs/bdeg-engineering-design-proposal.md) | Original design document (historical) |
 
 ## Examples
 
