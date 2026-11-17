@@ -2,7 +2,6 @@
 # DO NOT EDIT - regenerate with: bazel build //<your-package>:export
 cmake_minimum_required(VERSION 3.16)
 
-set(BDEG_PREFIX "@BDEG_PREFIX@")
 set(BDEG_VERSION "@PACKAGE_VERSION@")
 set(CMAKE_CXX_STANDARD @CXX_STANDARD@)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

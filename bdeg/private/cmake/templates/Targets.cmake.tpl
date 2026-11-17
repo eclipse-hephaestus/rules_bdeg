@@ -130,6 +130,9 @@ foreach(_lib IN LISTS _@PACKAGE_NAME@_RAW_LINK_LIBS)
   elseif(_lib MATCHES "::")
     # CMake target reference - keep as-is
     list(APPEND _@PACKAGE_NAME@_LINK_LIBS "${_lib}")
+  elseif(_lib MATCHES "^-l")
+    # Library flag (e.g. -lm) - pass through untouched, after the archive
+    list(APPEND _@PACKAGE_NAME@_LINK_LIBS "${_lib}")
   elseif(IS_ABSOLUTE "${_lib}")
     list(APPEND _@PACKAGE_NAME@_LINK_LIBS "${_lib}")
   else()
@@ -179,7 +182,7 @@ if(_@PACKAGE_NAME@_IMPORTED_LOCATION AND EXISTS "${_@PACKAGE_NAME@_IMPORTED_LOCA
     set(_@PACKAGE_NAME@_LINK_LIBS "${_@PACKAGE_NAME@_SELF_LINK};${_@PACKAGE_NAME@_LINK_LIBS}")
     # APPEND, never replace: the property may already hold this target's own
     # link flags from its Bazel linkopts (GTest, for instance, carries
-    # -pthread, set further up from @TARGET_PROPERTIES_EXTRA@). Overwriting it
+    # -pthread, set further up from the extra target properties). Overwriting it
     # would silently drop those, leaving consumers with undefined pthread
     # symbols or a binary that fails at runtime.
     set_property(TARGET @PACKAGE_NAME@::@TARGET_NAME@ APPEND PROPERTY

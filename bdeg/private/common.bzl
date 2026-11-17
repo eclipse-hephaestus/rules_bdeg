@@ -160,14 +160,24 @@ def collect_linking_info(cc_info, prefer_pic = True):
     Returns:
         A struct with fields:
             - library_paths: list of library file paths
-            - link_options: list of linker flags
+            - link_options: list of linker flags (excluding -l<lib> flags)
+            - link_libs: list of -l<lib> flags, to be linked after archives
     """
     context = cc_info.linking_context
     library_paths = []
     link_options = []
+    link_libs = []
 
     for linker_input in context.linker_inputs.to_list():
-        link_options.extend(getattr(linker_input, "user_link_flags", []))
+        for flag in getattr(linker_input, "user_link_flags", []):
+            # Library-valued flags (-lm, -lssl) are order-sensitive: they must
+            # follow the archive that references them. INTERFACE_LINK_OPTIONS is
+            # emitted before the libraries, so route them separately so they can
+            # be emitted via INTERFACE_LINK_LIBRARIES instead.
+            if flag.startswith("-l") and len(flag) > 2:
+                link_libs.append(flag)
+            else:
+                link_options.append(flag)
         for library in linker_input.libraries:
             candidate = select_library_file(library, prefer_pic)
             if candidate:
@@ -175,10 +185,12 @@ def collect_linking_info(cc_info, prefer_pic = True):
 
     library_paths = unique_strings(library_paths)
     link_options = unique_strings(link_options)
+    link_libs = unique_strings(link_libs)
 
     return struct(
         library_paths = library_paths,
         link_options = link_options,
+        link_libs = link_libs,
     )
 
 def extract_target_metadata(target, export_name):
@@ -218,6 +230,7 @@ def extract_target_metadata(target, export_name):
         library_paths = linking.library_paths,
         primary_library = linking.library_paths[0] if linking.library_paths else None,
         link_options = linking.link_options,
+        link_libs = linking.link_libs,
     )
 
 def build_label_to_export_map(deps_dict, format_target_name_fn):
@@ -238,16 +251,20 @@ def build_label_to_export_map(deps_dict, format_target_name_fn):
         target_name = sanitize_identifier(target.label.name)
         formatted_name = format_target_name_fn(export_name, target_name)
 
+        # Exact label only. Matching by repository alone would map any
+        # unexported library from the same repo onto this export and silently
+        # drop its archive; unmatched libraries fall through to raw-path logic.
         label_map[label_str] = formatted_name
 
-        # Also map by repo name for external deps (e.g., "@googletest" without target)
-        repo_name = target.label.workspace_name
-        if repo_name:
-            repo_key = "@{0}".format(repo_name)
-            if repo_key not in label_map:
-                label_map[repo_key] = formatted_name
-
     return label_map
+
+def _has_compiled_objects(library):
+    """True if Bazel compiled object files for this library (so it gets merged)."""
+    for attr in ["objects", "pic_objects"]:
+        objs = getattr(library, attr, None)
+        if objs:
+            return True
+    return False
 
 def resolve_transitive_deps(cc_info, label_map, current_target_name, exclude_primary = None, drop_own_leaf_objects = False):
     """Resolve transitive link dependencies to export target names where possible.
@@ -257,19 +274,17 @@ def resolve_transitive_deps(cc_info, label_map, current_target_name, exclude_pri
         label_map: Mapping from Bazel labels to export target names
         current_target_name: The export target name of the current target (to avoid self-reference)
         exclude_primary: Library path to exclude (the primary library)
-        drop_own_leaf_objects: When True, drop unmapped raw library paths that
-            point *inside Bazel's build output* (`bazel-out/`). Those are this
-            package's own freshly-built leaf archives, whose object code is
-            already contained in the merged static archive we export, so
-            re-emitting them would double-link (the "diamond duplicate" /
+        drop_own_leaf_objects: When True, drop unmapped libraries whose object
+            files were compiled by Bazel. Their object code is already
+            contained in the merged static archive we export, so re-emitting
+            them would double-link (the "diamond duplicate" /
             multiple-definition problem).
 
-            Crucially, unmapped paths that do NOT live under `bazel-out/` are
-            still kept. Those are genuine external/system libraries (e.g. a
-            prebuilt `libacl.a` shipped by a repo rule under `external/...`)
-            that are NOT part of the merged archive, so the CMake consumer still
-            needs to link them. Dropping them is what previously caused
-            "undefined reference" errors for system libs.
+            Libraries without compiled objects are still kept, regardless of
+            output directory. Those are prebuilt or archive-only deps (e.g. a
+            `libacl.a` from a repo rule, or a generated archive wrapped by
+            `cc_import`) that are NOT part of the merged archive, so the CMake
+            consumer still needs to link them.
 
             Set this True when the current package is exported as a single
             merged static archive (full transitive closure). Genuine
@@ -305,10 +320,6 @@ def resolve_transitive_deps(cc_info, label_map, current_target_name, exclude_pri
             export_target = None
             if owner_str and owner_str in label_map:
                 export_target = label_map[owner_str]
-            elif owner:
-                repo_key = "@{0}".format(owner.workspace_name) if owner.workspace_name else None
-                if repo_key and repo_key in label_map:
-                    export_target = label_map[repo_key]
 
             if export_target:
                 # Skip self-references
@@ -322,14 +333,16 @@ def resolve_transitive_deps(cc_info, label_map, current_target_name, exclude_pri
                 transitive_deps.append(export_target)
             else:
                 # Unmapped raw library path.
-                if drop_own_leaf_objects and ("bazel-out/" in lib_path or "bazel-out\\" in lib_path):
-                    # Our own Bazel-built leaf object code - already inside the
-                    # merged archive, so skip it to avoid double-linking.
+                if drop_own_leaf_objects and _has_compiled_objects(library):
+                    # Object code compiled by Bazel for this closure - already
+                    # inside the merged archive, so skip it to avoid
+                    # double-linking.
                     continue
 
-                # Keep genuine external/system libraries. They are not produced
-                # under bazel-out/ and are not part of the merged archive, so the
-                # consumer must still link them (e.g. a prebuilt libacl.a).
+                # Keep everything else, wherever it lives: genuine external or
+                # system libraries and archive-only deps (e.g. a generated
+                # archive wrapped by cc_import) that carry no compiled objects
+                # and so are not part of the merged archive.
                 transitive_deps.append(lib_path)
 
     return transitive_deps

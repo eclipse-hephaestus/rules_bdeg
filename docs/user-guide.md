@@ -267,7 +267,6 @@ not.
 | `merge_static_libraries` | `bool` | `True` | Auto-generate one merged archive per package containing the full transitive closure (see [Linking model](#linking-model-merged-archives)). Leave this on for real code. |
 | `whole_archive` | `bool` | `False` | Link **all** exported packages with `--whole-archive`. Rarely needed; prefer `whole_archive_packages`. |
 | `whole_archive_packages` | `string_list` | `[]` | List of package names to whole-archive individually, leaving the rest as normal `STATIC`. |
-| `cmake_prefix` | `string` | `"BDEG"` | Prefix for CMake variables |
 | `output_dir` | `string` | `"cmake-packages"` | Output directory name. **Must be unique** if you have more than one `cmake_export` in the same Bazel package. |
 | `version` | `string` | `"0.1.0"` | Version for generated packages |
 | `cxx_standard` | `string` | `"17"` | C++ standard for toolchain file |

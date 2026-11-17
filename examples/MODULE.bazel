@@ -31,8 +31,11 @@ bazel_dep(name = "boost.program_options", version = "1.87.0")
 
 # For boost
 bazel_dep(name = "rules_boost", repo_name = "com_github_nelhage_rules_boost")
+# Pinned to an immutable commit (not the moving `master` branch) with an
+# integrity hash so builds are reproducible.
 archive_override(
     module_name = "rules_boost",
-    strip_prefix = "rules_boost-master",
-    urls = ["https://github.com/nelhage/rules_boost/archive/refs/heads/master.tar.gz"],
+    integrity = "sha256-Tz5agJHE0tNpF24jp0Smux7m9bQr6xrxkqYxHMNAKs4=",
+    strip_prefix = "rules_boost-d4d306ef48b7dbddf0389e48b90f6eb74ec18a71",
+    urls = ["https://github.com/nelhage/rules_boost/archive/d4d306ef48b7dbddf0389e48b90f6eb74ec18a71.tar.gz"],
 )

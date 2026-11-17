@@ -175,6 +175,14 @@ def _cmake_export_impl(ctx):
             drop_own_leaf_objects = merged_path != None,
         )
 
+        # Library flags (-lm, -lssl) go last so they follow the archive that
+        # needs them; emitting them as link options would put them too early.
+        transitive_link_deps = transitive_link_deps + [
+            flag
+            for flag in metadata.link_libs
+            if flag not in transitive_link_deps
+        ]
+
         # Declare output files
         config_file = ctx.actions.declare_file("{0}/{1}Config.cmake".format(ctx.attr.output_dir, package_name))
         version_file = ctx.actions.declare_file("{0}/{1}ConfigVersion.cmake".format(ctx.attr.output_dir, package_name))
@@ -279,7 +287,6 @@ def _cmake_export_impl(ctx):
         output = toolchain_file,
         template = ctx.file._toolchain_template,
         substitutions = {
-            "@BDEG_PREFIX@": ctx.attr.cmake_prefix,
             "@PACKAGE_VERSION@": ctx.attr.version,
             "@CXX_STANDARD@": ctx.attr.cxx_standard,
         },
@@ -333,10 +340,6 @@ _cmake_export_rule = rule(
                   "when only some components need every object forced in - e.g. whole-archive a " +
                   "top-level component but NOT a dependency it already subsumes, which would " +
                   "otherwise double-link and produce multiple-definition errors.",
-        ),
-        "cmake_prefix": attr.string(
-            default = "BDEG",
-            doc = "Prefix for CMake variables in generated files",
         ),
         "output_dir": attr.string(
             default = "cmake-packages",
@@ -415,7 +418,7 @@ def cmake_export(
             "ScoreBaseLibs" (which the former already subsumes), avoiding
             multiple-definition errors from double-whole-archiving.
         **kwargs: Forwarded to the underlying rule (output_dir, version,
-            cmake_prefix, cxx_standard, visibility, tags, etc.).
+            cxx_standard, visibility, tags, etc.).
 
     Example:
         ```python
@@ -460,6 +463,26 @@ def cmake_export(
                 ) +
                 "A cmake_export package currently supports exactly one Bazel target.\n" +
                 "Give each target its own package name, for example \"{0}\" and \"{0}Main\".".format(package_name),
+            )
+
+    # Merged target names use the *sanitized* package name, so distinct packages
+    # such as "Foo-Bar" and "Foo_Bar" would both become "<name>_Foo_Bar_merged"
+    # and Bazel would reject the duplicate target. Detect that up front.
+    packages_by_identifier = {}
+    for package_name in labels_by_package:
+        packages_by_identifier.setdefault(sanitize_identifier(package_name), []).append(package_name)
+
+    for identifier in sorted(packages_by_identifier):
+        colliding = sorted(packages_by_identifier[identifier])
+        if len(colliding) > 1:
+            fail(
+                "cmake_export(name = \"{0}\"): CMake packages {1} all sanitize to \"{2}\", ".format(
+                    name,
+                    ", ".join(["\"{0}\"".format(p) for p in colliding]),
+                    identifier,
+                ) +
+                "which would produce colliding internal target names.\n" +
+                "Rename the packages so they differ in more than punctuation.",
             )
 
     merged_libraries = {}
