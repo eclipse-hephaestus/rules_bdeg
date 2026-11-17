@@ -81,7 +81,7 @@ target_link_libraries(my_app PRIVATE GTest::gtest)
 
 ## Requirements
 
-- Bazel 8.0.0+
+- Bazel 8.0.0+. On Bazel 8.x, add `common --experimental_cc_static_library` to your workspace's `.bazelrc`.
 - CMake 3.16+
 
 ## Documentation
