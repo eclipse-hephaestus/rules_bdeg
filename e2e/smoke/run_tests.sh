@@ -56,8 +56,26 @@ assert_grep() {
   fi
 }
 
+# assert_not_grep <file> <regex> <description>
+# Asserts a pattern is ABSENT. A missing file counts as a failure, so a typo in
+# the path cannot masquerade as a passing negative check.
+assert_not_grep() {
+  if [ ! -f "$1" ]; then
+    fail "$3 (file missing: $1)"
+  elif grep -qE "$2" "$1"; then
+    fail "$3 (pattern '/$2/' unexpectedly present in $1)"
+  else
+    pass "$3"
+  fi
+}
+
 section "Step 1: build all export targets"
-bazel "${BAZEL_STARTUP[@]}" build "${BAZEL_FLAGS[@]}" //:export_all //:export_calc_wa //:export_gtest
+# //:export_testonly exports a testonly cc_library. It is built here purely as
+# a regression guard: cmake_export must forward `testonly` to the merged
+# cc_static_library it generates, otherwise Bazel rejects the build at analysis
+# time with "non-test target '..._merged' depends on testonly target". Since
+# that is an analysis error, simply building the target is a sufficient check.
+bazel "${BAZEL_STARTUP[@]}" build "${BAZEL_FLAGS[@]}" //:export_all //:export_calc_wa //:export_gtest //:export_testonly
 
 BB="$(bazel "${BAZEL_STARTUP[@]}" info "${BAZEL_FLAGS[@]}" bazel-bin)"
 PKG="$BB/cmake-packages"
@@ -89,6 +107,22 @@ assert_grep "$PKG/CalcTargets.cmake" "AddLib::add" "Calc link line references Ad
 
 section "Aspect: compile-define propagation"
 assert_grep "$PKG/CalcTargets.cmake" "BDEG_CALC_VERSION=42" "Calc carries INTERFACE_COMPILE_DEFINITIONS"
+# `add` declares defines = [BDEG_CALC_VERSION=42] (public) and local_defines =
+# [BDEG_PRIVATE_SHOULD_NOT_LEAK=1] (private). Bazel never propagates
+# local_defines to dependents, so exporting it as an INTERFACE define would
+# compile consumers with the library's private configuration - an ODR hazard
+# that still links cleanly and only misbehaves at runtime. Guard both
+# directions: the public define must survive, the private one must not leak.
+assert_grep "$PKG/AddLibTargets.cmake" "BDEG_CALC_VERSION=42" "AddLib exports its public define"
+assert_not_grep "$PKG/AddLibTargets.cmake" "BDEG_PRIVATE_SHOULD_NOT_LEAK" "AddLib does NOT export local_defines"
+# `add` also declares the hostile define BDEG_TRICKY=\"a;b\", which contains
+# both a double quote and a semicolon - the two characters that break the
+# `PROP "item;item"` format the generator emits. Unescaped, the quote ends the
+# CMake argument early (parse error) and the inner semicolon splits one define
+# into two. Assert the escaped spelling: \" for the quotes and \; for the inner
+# semicolon, while the separator semicolon before BDEG_TRICKY stays plain so
+# the property is still a two-item list.
+assert_grep "$PKG/AddLibTargets.cmake" 'BDEG_TRICKY=\\"a\\;b\\"' "define with quote+semicolon is CMake-escaped"
 
 section "Aspect: both repository roots emitted (layout independence)"
 assert_grep "$PKG/bdeg-deps.cmake" "BDEG_EXECROOT" "BDEG_EXECROOT defined"
@@ -118,7 +152,12 @@ ln -sf "$PKG" cmake-packages
 rm -rf consumer/build
 cmake -S consumer -B consumer/build -DBDEG_DIR="$PKG" >/dev/null
 cmake --build consumer/build >/dev/null
-if ctest --test-dir consumer/build --output-on-failure; then
+# Run ctest from inside the build directory rather than via `--test-dir`.
+# `--test-dir` was only added in CMake 3.20, but this project supports 3.16+.
+# On an older ctest the unknown option is not honoured, so it looks for tests
+# in the current directory, finds none, and can still exit 0 - reporting
+# success while running nothing. The subshell keeps the cd local to this check.
+if (cd consumer/build && ctest --output-on-failure); then
   pass "consumer linked and all ctest cases passed"
 else
   fail "consumer build/test failed"

@@ -7,7 +7,7 @@
 # Usage (normally driven by ../run_tests.sh):
 #   cmake -S consumer -B consumer/build -DBDEG_DIR=/path/to/cmake-packages
 #   cmake --build consumer/build
-#   ctest --test-dir consumer/build --output-on-failure
+#   (cd consumer/build && ctest --output-on-failure)
 
 cmake_minimum_required(VERSION 3.16)
 

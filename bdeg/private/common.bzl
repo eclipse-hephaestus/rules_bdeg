@@ -89,11 +89,20 @@ def collect_compilation_info(cc_info):
 
     include_dirs = unique_strings(include_dirs)
 
-    # Note: defines and local_defines are depsets in CcInfo, need .to_list()
-    defines = []
-    defines.extend(context.defines.to_list())
-    defines.extend(context.local_defines.to_list())
-    defines = unique_strings(defines)
+    # Export ONLY `defines` (the public ones). Note: it is a depset, so .to_list().
+    #
+    # `local_defines` is deliberately excluded. Bazel applies it solely when
+    # compiling the defining target's own sources and never propagates it to
+    # dependents, so re-publishing it as an INTERFACE define would compile every
+    # CMake consumer with a library's private configuration - the opposite of
+    # what the library author asked for.
+    #
+    # This is not cosmetic. A private define that changes a struct's layout or
+    # inlining leaves the library compiled one way and the consumer compiled
+    # another. The result links cleanly and then misbehaves at runtime (an ODR
+    # violation), which is very hard to diagnose. Exporting only `defines` gives
+    # CMake consumers exactly what a Bazel consumer of the same target sees.
+    defines = unique_strings(context.defines.to_list())
 
     # Note: user_compile_flags is not available in CompilationContext in newer Bazel
     # Compile flags come from the toolchain, not from CcInfo directly

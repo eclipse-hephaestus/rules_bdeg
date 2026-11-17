@@ -103,7 +103,7 @@ sequenceDiagram
     end
     Rule->>Tpl: expand_template(umbrella = bdeg-deps.cmake)
     Rule->>Tpl: expand_template(toolchain = bdeg-toolchain.cmake)
-    Rule-->>Out: DefaultInfo(files = all generated .cmake)
+    Rule-->>Out: DefaultInfo(files = generated .cmake<br/>+ merged .a archives + exported headers)
 
     Note over CSL,Out: EXECUTION PHASE (bazel build runs the actions)
     CSL->>CSL: Actually merge object code into one .a
@@ -143,7 +143,7 @@ flowchart TD
     CC --> LINK["linking_context"]
 
     COMP --> I1["includes + quote_includes + system_includes<br/>+ dirs of direct_headers"]
-    COMP --> I2["defines + local_defines"]
+    COMP --> I2["defines<br/>(local_defines deliberately excluded)"]
     LINK --> L1["linker_inputs → libraries<br/>static / pic_static / dynamic / interface .a paths"]
     LINK --> L2["user_link_flags"]
 
@@ -159,7 +159,7 @@ flowchart TD
 | Information | Source field in `CcInfo` | Extracted by |
 |---|---|---|
 | Include directories | `compilation_context.includes/quote_includes/system_includes` + header dirs | `collect_compilation_info` |
-| Compile defines | `compilation_context.defines` + `local_defines` | `collect_compilation_info` |
+| Compile defines | `compilation_context.defines` only | `collect_compilation_info` |
 | Library `.a` paths | `linking_context.linker_inputs[].libraries[]` | `collect_linking_info` |
 | Linker flags | `linker_inputs[].user_link_flags` | `collect_linking_info` |
 | Cross-package deps | `linker_inputs[].owner` matched against label map | `resolve_transitive_deps` |
