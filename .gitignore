@@ -1,5 +1,5 @@
 .venv
-
+.vscode
 # Bazel convenience symlinks and local-only config
 bazel-*
 user.bazelrc
