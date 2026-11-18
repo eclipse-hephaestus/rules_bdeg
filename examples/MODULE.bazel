@@ -1,0 +1,41 @@
+# *******************************************************************************
+# Copyright (c) 2026 Contributors to the Eclipse Foundation
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0
+#
+# SPDX-License-Identifier: Apache-2.0
+# *******************************************************************************
+
+"Examples for rules_bdeg"
+
+module(name = "rules_bdeg_examples")
+
+# Use local rules_bdeg
+bazel_dep(name = "rules_bdeg", version = "0.0.0")
+local_path_override(
+    module_name = "rules_bdeg",
+    path = "..",
+)
+
+# C++ rules
+bazel_dep(name = "rules_cc", version = "0.2.1")
+
+# Dependencies to export
+bazel_dep(name = "googletest", version = "1.17.0")
+bazel_dep(name = "boost.program_options", version = "1.87.0")
+
+# For boost
+bazel_dep(name = "rules_boost", repo_name = "com_github_nelhage_rules_boost")
+# Pinned to an immutable commit (not the moving `master` branch) with an
+# integrity hash so builds are reproducible.
+archive_override(
+    module_name = "rules_boost",
+    integrity = "sha256-Tz5agJHE0tNpF24jp0Smux7m9bQr6xrxkqYxHMNAKs4=",
+    strip_prefix = "rules_boost-d4d306ef48b7dbddf0389e48b90f6eb74ec18a71",
+    urls = ["https://github.com/nelhage/rules_boost/archive/d4d306ef48b7dbddf0389e48b90f6eb74ec18a71.tar.gz"],
+)
